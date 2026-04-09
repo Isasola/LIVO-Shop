@@ -5,8 +5,8 @@ export default function Footer() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 40, marginBottom: 40 }}>
           <div>
             <div style={{ marginBottom: 14 }}>
-              <span style={{ fontFamily: 'Bricolage Grotesque, sans-serif', fontWeight: 700, fontSize: 16, color: 'white' }}>LIVO</span>
-              <span style={{ fontFamily: 'Bricolage Grotesque, sans-serif', fontWeight: 400, fontSize: 16, color: '#E8780A' }}>shop</span>
+              <span style={{ fontFamily: 'Clash Display, sans-serif', fontWeight: 700, fontSize: 16, color: 'white' }}>LIVO</span>
+              <span style={{ fontFamily: 'Clash Display, sans-serif', fontWeight: 400, fontSize: 16, color: '#E8780A' }}>shop</span>
             </div>
             <p style={{ fontSize: 13, color: '#555', lineHeight: 1.7 }}>
               Línea inteligente de ventas online. Los mejores productos en Paraguay.

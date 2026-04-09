@@ -18,7 +18,7 @@ export default function Navbar() {
                 background: '#0F0F0F', color: 'white',
                 borderRadius: 6, padding: '9px 16px',
                 fontSize: 12, fontWeight: 600,
-                fontFamily: 'Cabinet Grotesk, sans-serif',
+                fontFamily: 'Satoshi, sans-serif',
                 textDecoration: 'none', cursor: 'pointer',
               }}
               onMouseEnter={e => e.currentTarget.style.background = '#25D366'}
