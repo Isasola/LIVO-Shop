@@ -42,11 +42,14 @@ export default function Admin() {
     for (const file of files) {
       const ext = file.name.split('.').pop()
       const path = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
-      const { error } = await supabase.storage.from('productos').upload(path, file)
-      if (!error) {
-        const { data } = supabase.storage.from('productos').getPublicUrl(path)
-        urls.push(data.publicUrl)
+      const { data: upData, error } = await supabase.storage.from('productos').upload(path, file)
+      if (error) {
+        setMsg('Error subiendo foto: ' + error.message)
+        setSaving(false)
+        return []
       }
+      const { data } = supabase.storage.from('productos').getPublicUrl(path)
+      urls.push(data.publicUrl)
     }
     return urls
   }
