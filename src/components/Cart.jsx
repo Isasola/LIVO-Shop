@@ -35,7 +35,7 @@ export default function Cart() {
         {/* Header */}
         <div style={{ padding: '20px 24px', borderBottom: '1px solid #E8E4DE', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <h2 style={{ fontFamily: 'Unbounded, sans-serif', fontSize: '18px', fontWeight: 700 }}>Tu pedido</h2>
+            <h2 style={{ fontFamily: 'Bricolage Grotesque, sans-serif', fontSize: '18px', fontWeight: 700 }}>Tu pedido</h2>
             {count > 0 && <p style={{ fontSize: '13px', color: '#6B6B6B', marginTop: '2px' }}>{count} {count === 1 ? 'producto' : 'productos'}</p>}
           </div>
           <button onClick={() => setOpen(false)} style={{ background: 'none', border: 'none', fontSize: '22px', color: '#6B6B6B', cursor: 'pointer', lineHeight: 1 }}>✕</button>
@@ -95,7 +95,7 @@ export default function Cart() {
           <div style={{ padding: '20px 24px', borderTop: '1px solid #E8E4DE' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
               <span style={{ fontSize: '15px', color: '#6B6B6B' }}>Total estimado</span>
-              <span style={{ fontSize: '18px', fontWeight: 700, fontFamily: 'Unbounded, sans-serif' }}>
+              <span style={{ fontSize: '18px', fontWeight: 700, fontFamily: 'Bricolage Grotesque, sans-serif' }}>
                 {total > 0 ? `Gs. ${total.toLocaleString('es-PY')}` : 'A consultar'}
               </span>
             </div>

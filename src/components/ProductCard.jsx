@@ -43,15 +43,15 @@ export default function ProductCard({ product }) {
 
       <div style={{ padding:'16px 18px 18px' }}>
         {product.categoria && (
-          <p style={{ fontFamily:'Instrument Sans, sans-serif', fontSize:10, fontWeight:600, letterSpacing:'0.15em', textTransform:'uppercase', color:'#E8780A', marginBottom:6 }}>{product.categoria}</p>
+          <p style={{ fontFamily:'Cabinet Grotesk, sans-serif', fontSize:10, fontWeight:600, letterSpacing:'0.15em', textTransform:'uppercase', color:'#E8780A', marginBottom:6 }}>{product.categoria}</p>
         )}
-        <h3 style={{ fontFamily:'Unbounded, sans-serif', fontSize:12, fontWeight:700, lineHeight:1.45, letterSpacing:'-0.3px', color:'#0F0F0F', marginBottom:14 }}>
+        <h3 style={{ fontFamily:'Bricolage Grotesque, sans-serif', fontSize:12, fontWeight:700, lineHeight:1.45, letterSpacing:'-0.3px', color:'#0F0F0F', marginBottom:14 }}>
           {product.nombre}
         </h3>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8 }}>
           {hasPrice
-            ? <p style={{ fontFamily:'Unbounded, sans-serif', fontSize:16, fontWeight:900, color:'#0F0F0F', letterSpacing:'-0.5px' }}>Gs. {product.precio_gs.toLocaleString('es-PY')}</p>
-            : <p style={{ fontSize:12, color:'#999', fontFamily:'Instrument Sans, sans-serif' }}>Consultar precio</p>
+            ? <p style={{ fontFamily:'Bricolage Grotesque, sans-serif', fontSize:16, fontWeight:900, color:'#0F0F0F', letterSpacing:'-0.5px' }}>Gs. {product.precio_gs.toLocaleString('es-PY')}</p>
+            : <p style={{ fontSize:12, color:'#999', fontFamily:'Cabinet Grotesk, sans-serif' }}>Consultar precio</p>
           }
           <button
             onClick={e => { e.stopPropagation(); add(product); }}
@@ -59,7 +59,7 @@ export default function ProductCard({ product }) {
               background: added ? '#16A34A' : '#0F0F0F',
               color:'white', border:'none', borderRadius:4,
               padding:'9px 16px', fontSize:11, fontWeight:700,
-              fontFamily:'Instrument Sans, sans-serif',
+              fontFamily:'Cabinet Grotesk, sans-serif',
               cursor:'pointer', transition:'background 0.2s',
               letterSpacing:'0.05em',
             }}

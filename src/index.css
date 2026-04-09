@@ -10,8 +10,8 @@
   --border: #EBEBEB;
   --surface: #F8F6F3;
   --white: #FFFFFF;
-  --font-display: 'Unbounded', sans-serif;
-  --font-body: 'Instrument Sans', sans-serif;
+  --font-display: 'Bricolage Grotesque', sans-serif;
+  --font-body: 'Cabinet Grotesk', sans-serif;
   --radius: 10px;
   --radius-lg: 16px;
 }
@@ -39,3 +39,47 @@ img { max-width: 100%; display: block; }
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: var(--surface); }
 ::-webkit-scrollbar-thumb { background: #DDD; border-radius: 2px; }
+
+/* Mobile responsive adjustments */
+@media (max-width: 768px) {
+  .hero-grid {
+    grid-template-columns: 1fr !important;
+    gap: 40px !important;
+    padding-top: 60px !important;
+  }
+  
+  .hero-logo {
+    order: -1; /* Move logo to the top */
+    min-height: 300px !important;
+  }
+
+  .hero-text {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .hero-text h1 {
+    font-size: 32px !important;
+  }
+
+  .hero-text p {
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .hero-text div {
+    justify-content: center;
+  }
+}
+
+@keyframes ticker {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .5; }
+}
