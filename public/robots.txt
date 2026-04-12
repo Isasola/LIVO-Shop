@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://livoshop.netlify.app/sitemap.xml
