@@ -2,6 +2,13 @@
   command = "npm run build"
   publish = "dist"
 
+# Redirige cualquier /producto/ID a la función que genera los meta tags reales
+[[redirects]]
+  from = "/producto/*"
+  to = "/.netlify/functions/og-product"
+  status = 200
+
+# Cualquier otra ruta → SPA (React se encarga)
 [[redirects]]
   from = "/*"
   to = "/index.html"
