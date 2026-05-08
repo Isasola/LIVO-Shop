@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
+import Radar from '../components/admin/Radar'
 
 const EMPTY = {
   nombre: '', precio_gs: '', descripcion: '',
@@ -22,6 +23,7 @@ export default function Admin() {
   const [msg, setMsg] = useState('')
   const [view, setView] = useState('list') // 'list' | 'form'
   const [uploading, setUploading] = useState(false)
+  const [activeTab, setActiveTab] = useState('productos') // 'productos' | 'radar'
 
   useEffect(() => {
     if (!authLoading && !user) navigate('/login')
@@ -136,25 +138,94 @@ export default function Admin() {
   if (authLoading) return <div style={{ minHeight: '80vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><p>Cargando...</p></div>
   if (!user) return null
 
+  const tabs = [
+    { id: 'productos', label: 'Productos', icon: '📦' },
+    { id: 'radar', label: 'Radar', icon: '🔥', badge: 'NUEVO' },
+  ]
+
   return (
     <main style={{ padding: '32px 0 80px', minHeight: '80vh' }}>
       <div className="container">
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px', flexWrap: 'wrap', gap: '12px' }}>
           <div>
-            <h1 style={{ fontFamily: 'Syne, sans-serif', fontSize: '24px', fontWeight: 700 }}>Panel Admin</h1>
-            <p style={{ fontSize: '13px', color: '#6B6B6B', marginTop: '2px' }}>{productos.length} productos en total</p>
+            <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '28px', fontWeight: 700 }}>Panel Admin</h1>
+            <p style={{ fontSize: '13px', color: '#6B6B6B', marginTop: '4px' }}>
+              <span style={{
+                display: 'inline-block',
+                background: '#F0F0F0',
+                color: '#6B6B6B',
+                padding: '4px 10px',
+                borderRadius: '20px',
+                fontWeight: 500,
+              }}>
+                {productos.length} productos
+              </span>
+            </p>
           </div>
           <div style={{ display: 'flex', gap: '10px' }}>
-            {view === 'list' ? (
+            {activeTab === 'productos' && view === 'list' ? (
               <button onClick={() => { resetForm(); setView('form') }} style={btnPrimary}>
                 + Nuevo producto
               </button>
-            ) : (
+            ) : activeTab === 'productos' && view === 'form' ? (
               <button onClick={resetForm} style={btnSecondary}>← Volver</button>
-            )}
+            ) : null}
             <button onClick={() => { logout(); navigate('/') }} style={btnSecondary}>Salir</button>
           </div>
+        </div>
+
+        {/* Tabs */}
+        <div style={{
+          display: 'flex',
+          gap: '32px',
+          borderBottom: '1px solid var(--border)',
+          marginBottom: '32px',
+          paddingBottom: '0',
+        }}>
+          {tabs.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => {
+                setActiveTab(tab.id)
+                if (tab.id === 'productos') {
+                  setView('list')
+                  resetForm()
+                }
+              }}
+              style={{
+                padding: '12px 0',
+                border: 'none',
+                background: 'none',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: activeTab === tab.id ? 600 : 500,
+                color: activeTab === tab.id ? 'var(--brand)' : 'var(--mid)',
+                borderBottom: activeTab === tab.id ? '2px solid var(--brand)' : 'none',
+                marginBottom: '-1px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'all 0.2s',
+              }}
+            >
+              <span>{tab.icon}</span>
+              <span>{tab.label}</span>
+              {tab.badge && (
+                <span style={{
+                  background: 'var(--brand-light)',
+                  color: 'var(--brand)',
+                  fontSize: '9px',
+                  fontWeight: 700,
+                  padding: '2px 6px',
+                  borderRadius: '3px',
+                  marginLeft: '4px',
+                }}>
+                  {tab.badge}
+                </span>
+              )}
+            </button>
+          ))}
         </div>
 
         {msg && (
@@ -168,178 +239,188 @@ export default function Admin() {
           </div>
         )}
 
-        {/* FORM */}
-        {view === 'form' && (
-          <div style={{ background: 'white', border: '1.5px solid #E8E4DE', borderRadius: '16px', padding: '32px', maxWidth: '680px' }}>
-            <h2 style={{ fontFamily: 'Syne, sans-serif', fontSize: '18px', fontWeight: 700, marginBottom: '24px' }}>
-              {editId ? 'Editar producto' : 'Nuevo producto'}
-            </h2>
+        {/* PRODUCTOS TAB */}
+        {activeTab === 'productos' && (
+          <>
+            {/* FORM */}
+            {view === 'form' && (
+              <div style={{ background: 'white', border: '1.5px solid #E8E4DE', borderRadius: '16px', padding: '32px', maxWidth: '680px' }}>
+                <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '18px', fontWeight: 700, marginBottom: '24px' }}>
+                  {editId ? 'Editar producto' : 'Nuevo producto'}
+                </h2>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-              {/* Nombre */}
-              <Field label="Nombre del producto *">
-                <input value={form.nombre} onChange={e => setForm({...form, nombre: e.target.value})} placeholder="Ej: Cepillo Eléctrico Sónico ZD-X3" style={inputStyle} />
-              </Field>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                  {/* Nombre */}
+                  <Field label="Nombre del producto *">
+                    <input value={form.nombre} onChange={e => setForm({...form, nombre: e.target.value})} placeholder="Ej: Cepillo Eléctrico Sónico ZD-X3" style={inputStyle} />
+                  </Field>
 
-              {/* Precio */}
-              <Field label="Precio en Guaraníes (opcional por ahora)">
-                <input type="number" value={form.precio_gs} onChange={e => setForm({...form, precio_gs: e.target.value})} placeholder="Ej: 150000" style={inputStyle} />
-                <p style={{ fontSize: '12px', color: '#6B6B6B', marginTop: '4px' }}>Dejá vacío para mostrar "Consultar precio"</p>
-              </Field>
+                  {/* Precio */}
+                  <Field label="Precio en Guaraníes (opcional por ahora)">
+                    <input type="number" value={form.precio_gs} onChange={e => setForm({...form, precio_gs: e.target.value})} placeholder="Ej: 150000" style={inputStyle} />
+                    <p style={{ fontSize: '12px', color: '#6B6B6B', marginTop: '4px' }}>Dejá vacío para mostrar "Consultar precio"</p>
+                  </Field>
 
-              {/* Descripción */}
-              <Field label="Descripción">
-                <textarea value={form.descripcion} onChange={e => setForm({...form, descripcion: e.target.value})} placeholder="Descripción del producto, características, etc." rows={3} style={{...inputStyle, resize: 'vertical'}} />
-              </Field>
+                  {/* Descripción */}
+                  <Field label="Descripción">
+                    <textarea value={form.descripcion} onChange={e => setForm({...form, descripcion: e.target.value})} placeholder="Descripción del producto, características, etc." rows={3} style={{...inputStyle, resize: 'vertical'}} />
+                  </Field>
 
-              {/* Categoria + Tipo */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                <Field label="Categoría">
-                  <select value={form.categoria} onChange={e => setForm({...form, categoria: e.target.value})} style={inputStyle}>
-                    <option value="">Sin categoría</option>
-                    {CATEGORIAS.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </Field>
-                <Field label="Tipo">
-                  <select value={form.tipo} onChange={e => setForm({...form, tipo: e.target.value})} style={inputStyle}>
-                    <option value="stock">Stock propio</option>
-                    <option value="dropshipping">Dropshipping (Dropi)</option>
-                  </select>
-                </Field>
-              </div>
+                  {/* Categoria + Tipo */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                    <Field label="Categoría">
+                      <select value={form.categoria} onChange={e => setForm({...form, categoria: e.target.value})} style={inputStyle}>
+                        <option value="">Sin categoría</option>
+                        {CATEGORIAS.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </Field>
+                    <Field label="Tipo">
+                      <select value={form.tipo} onChange={e => setForm({...form, tipo: e.target.value})} style={inputStyle}>
+                        <option value="stock">Stock propio</option>
+                        <option value="dropshipping">Dropshipping (Dropi)</option>
+                      </select>
+                    </Field>
+                  </div>
 
-              {/* Variantes */}
-              <Field label="Variantes (opcional)">
-                <input value={form.variantes} onChange={e => setForm({...form, variantes: e.target.value})} placeholder="Ej: Negro, Blanco, Rosa (separadas por coma)" style={inputStyle} />
-              </Field>
+                  {/* Variantes */}
+                  <Field label="Variantes (opcional)">
+                    <input value={form.variantes} onChange={e => setForm({...form, variantes: e.target.value})} placeholder="Ej: Negro, Blanco, Rosa (separadas por coma)" style={inputStyle} />
+                  </Field>
 
-              {/* Checkboxes */}
-              <div style={{ display: 'flex', gap: '24px' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={form.activo} onChange={e => setForm({...form, activo: e.target.checked})} />
-                  Activo (visible en la tienda)
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={form.destacado} onChange={e => setForm({...form, destacado: e.target.checked})} />
-                  Destacado
-                </label>
-              </div>
+                  {/* Checkboxes */}
+                  <div style={{ display: 'flex', gap: '24px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={form.activo} onChange={e => setForm({...form, activo: e.target.checked})} />
+                      Activo (visible en la tienda)
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={form.destacado} onChange={e => setForm({...form, destacado: e.target.checked})} />
+                      Destacado
+                    </label>
+                  </div>
 
-              {/* Imágenes */}
-              <Field label="Fotos del producto">
-                <div style={{
-                  border: '2px dashed #E8E4DE', borderRadius: '10px',
-                  padding: '24px', textAlign: 'center',
-                  cursor: 'pointer', position: 'relative',
-                }}>
-                  <input
-                    type="file" multiple accept="image/*"
-                    onChange={e => setFiles(Array.from(e.target.files))}
-                    style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }}
-                  />
-                  <p style={{ fontSize: '14px', color: '#6B6B6B' }}>
-                    {files.length > 0 ? `${files.length} foto(s) seleccionada(s)` : 'Tocá para seleccionar fotos'}
-                  </p>
-                  <p style={{ fontSize: '12px', color: '#999', marginTop: '4px' }}>JPG, PNG — hasta 50MB por imagen</p>
+                  {/* Imágenes */}
+                  <Field label="Fotos del producto">
+                    <div style={{
+                      border: '2px dashed #E8E4DE', borderRadius: '10px',
+                      padding: '24px', textAlign: 'center',
+                      cursor: 'pointer', position: 'relative',
+                    }}>
+                      <input
+                        type="file" multiple accept="image/*"
+                        onChange={e => setFiles(Array.from(e.target.files))}
+                        style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }}
+                      />
+                      <p style={{ fontSize: '14px', color: '#6B6B6B' }}>
+                        {files.length > 0 ? `${files.length} foto(s) seleccionada(s)` : 'Tocá para seleccionar fotos'}
+                      </p>
+                      <p style={{ fontSize: '12px', color: '#999', marginTop: '4px' }}>JPG, PNG — hasta 50MB por imagen</p>
+                    </div>
+                    {files.length > 0 && (
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '10px' }}>
+                        {files.map((f, i) => (
+                          <img key={i} src={URL.createObjectURL(f)} alt="" style={{ width: '64px', height: '64px', objectFit: 'cover', borderRadius: '8px', border: '1px solid #E8E4DE' }} />
+                        ))}
+                      </div>
+                    )}
+                  </Field>
+
+                  {/* Existing images when editing */}
+                  {editId && (() => {
+                    const p = productos.find(x => x.id === editId)
+                    const imgs = p?.imagenes || []
+                    if (!imgs.length) return null
+                    return (
+                      <Field label="Fotos actuales">
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                          {imgs.map((url, i) => (
+                            <div key={i} style={{ position: 'relative' }}>
+                              <img src={url} alt="" style={{ width: '72px', height: '72px', objectFit: 'cover', borderRadius: '8px', border: '1px solid #E8E4DE' }} />
+                              <button
+                                onClick={() => removeImage(editId, url)}
+                                style={{
+                                  position: 'absolute', top: '-6px', right: '-6px',
+                                  width: '20px', height: '20px', borderRadius: '50%',
+                                  background: '#E24B4A', color: 'white', border: 'none',
+                                  fontSize: '11px', cursor: 'pointer', lineHeight: 1,
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                }}
+                              >✕</button>
+                            </div>
+                          ))}
+                        </div>
+                      </Field>
+                    )
+                  })()}
+
+                  <button
+                    onClick={handleSave}
+                    disabled={saving}
+                    style={{...btnPrimary, padding: '13px', fontSize: '15px', opacity: saving ? 0.7 : 1}}
+                  >
+                    {uploading ? 'Subiendo fotos...' : saving ? 'Guardando...' : editId ? 'Guardar cambios' : 'Crear producto'}
+                  </button>
                 </div>
-                {files.length > 0 && (
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '10px' }}>
-                    {files.map((f, i) => (
-                      <img key={i} src={URL.createObjectURL(f)} alt="" style={{ width: '64px', height: '64px', objectFit: 'cover', borderRadius: '8px', border: '1px solid #E8E4DE' }} />
+              </div>
+            )}
+
+            {/* LIST */}
+            {view === 'list' && (
+              <div>
+                {productos.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '80px 0', color: '#6B6B6B' }}>
+                    <div style={{ fontSize: '48px', marginBottom: '16px' }}>📦</div>
+                    <p style={{ fontSize: '16px' }}>Todavía no hay productos</p>
+                    <button onClick={() => setView('form')} style={{...btnPrimary, marginTop: '16px'}}>+ Agregar el primero</button>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {productos.map(p => (
+                      <div key={p.id} style={{
+                        background: 'white',
+                        border: `1.5px solid ${p.activo ? '#E8E4DE' : '#F5C4B3'}`,
+                        borderRadius: '12px', padding: '16px 20px',
+                        display: 'flex', gap: '16px', alignItems: 'center',
+                        opacity: p.activo ? 1 : 0.7,
+                      }}>
+                        {p.imagenes?.[0] && (
+                          <img src={p.imagenes[0]} alt="" style={{ width: '56px', height: '56px', objectFit: 'cover', borderRadius: '8px', flexShrink: 0 }} />
+                        )}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            <p style={{ fontWeight: 600, fontSize: '15px', fontFamily: 'var(--font-display)' }}>{p.nombre}</p>
+                            {p.destacado && <span style={{ fontSize: '10px', background: '#FFF0E0', color: '#E8780A', padding: '2px 8px', borderRadius: '10px', fontWeight: 600 }}>DESTACADO</span>}
+                            {!p.activo && <span style={{ fontSize: '10px', background: '#FAECE7', color: '#993C1D', padding: '2px 8px', borderRadius: '10px', fontWeight: 600 }}>INACTIVO</span>}
+                            <span style={{ fontSize: '10px', background: '#F5F3EF', color: '#6B6B6B', padding: '2px 8px', borderRadius: '10px' }}>{p.tipo}</span>
+                          </div>
+                          <p style={{ fontSize: '13px', color: '#6B6B6B', marginTop: '2px' }}>
+                            {p.categoria && `${p.categoria} · `}
+                            {p.precio_gs ? `Gs. ${p.precio_gs.toLocaleString('es-PY')}` : 'Precio a consultar'}
+                          </p>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', flexShrink: 0, flexWrap: 'wrap' }}>
+                          <button onClick={() => handleToggle(p)} style={{...btnSecondary, fontSize: '12px', padding: '6px 12px'}}>
+                            {p.activo ? 'Desactivar' : 'Activar'}
+                          </button>
+                          <button onClick={() => handleEdit(p)} style={{...btnSecondary, fontSize: '12px', padding: '6px 12px'}}>
+                            Editar
+                          </button>
+                          <button onClick={() => handleDelete(p.id)} style={{...btnDanger, fontSize: '12px', padding: '6px 12px'}}>
+                            Eliminar
+                          </button>
+                        </div>
+                      </div>
                     ))}
                   </div>
                 )}
-              </Field>
-
-              {/* Existing images when editing */}
-              {editId && (() => {
-                const p = productos.find(x => x.id === editId)
-                const imgs = p?.imagenes || []
-                if (!imgs.length) return null
-                return (
-                  <Field label="Fotos actuales">
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                      {imgs.map((url, i) => (
-                        <div key={i} style={{ position: 'relative' }}>
-                          <img src={url} alt="" style={{ width: '72px', height: '72px', objectFit: 'cover', borderRadius: '8px', border: '1px solid #E8E4DE' }} />
-                          <button
-                            onClick={() => removeImage(editId, url)}
-                            style={{
-                              position: 'absolute', top: '-6px', right: '-6px',
-                              width: '20px', height: '20px', borderRadius: '50%',
-                              background: '#E24B4A', color: 'white', border: 'none',
-                              fontSize: '11px', cursor: 'pointer', lineHeight: 1,
-                              display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            }}
-                          >✕</button>
-                        </div>
-                      ))}
-                    </div>
-                  </Field>
-                )
-              })()}
-
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                style={{...btnPrimary, padding: '13px', fontSize: '15px', opacity: saving ? 0.7 : 1}}
-              >
-                {uploading ? 'Subiendo fotos...' : saving ? 'Guardando...' : editId ? 'Guardar cambios' : 'Crear producto'}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* LIST */}
-        {view === 'list' && (
-          <div>
-            {productos.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '80px 0', color: '#6B6B6B' }}>
-                <div style={{ fontSize: '48px', marginBottom: '16px' }}>📦</div>
-                <p style={{ fontSize: '16px' }}>Todavía no hay productos</p>
-                <button onClick={() => setView('form')} style={{...btnPrimary, marginTop: '16px'}}>+ Agregar el primero</button>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {productos.map(p => (
-                  <div key={p.id} style={{
-                    background: 'white',
-                    border: `1.5px solid ${p.activo ? '#E8E4DE' : '#F5C4B3'}`,
-                    borderRadius: '12px', padding: '16px 20px',
-                    display: 'flex', gap: '16px', alignItems: 'center',
-                    opacity: p.activo ? 1 : 0.7,
-                  }}>
-                    {p.imagenes?.[0] && (
-                      <img src={p.imagenes[0]} alt="" style={{ width: '56px', height: '56px', objectFit: 'cover', borderRadius: '8px', flexShrink: 0 }} />
-                    )}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                        <p style={{ fontWeight: 600, fontSize: '15px', fontFamily: 'Syne, sans-serif' }}>{p.nombre}</p>
-                        {p.destacado && <span style={{ fontSize: '10px', background: '#FFF0E0', color: '#E8780A', padding: '2px 8px', borderRadius: '10px', fontWeight: 600 }}>DESTACADO</span>}
-                        {!p.activo && <span style={{ fontSize: '10px', background: '#FAECE7', color: '#993C1D', padding: '2px 8px', borderRadius: '10px', fontWeight: 600 }}>INACTIVO</span>}
-                        <span style={{ fontSize: '10px', background: '#F5F3EF', color: '#6B6B6B', padding: '2px 8px', borderRadius: '10px' }}>{p.tipo}</span>
-                      </div>
-                      <p style={{ fontSize: '13px', color: '#6B6B6B', marginTop: '2px' }}>
-                        {p.categoria && `${p.categoria} · `}
-                        {p.precio_gs ? `Gs. ${p.precio_gs.toLocaleString('es-PY')}` : 'Precio a consultar'}
-                      </p>
-                    </div>
-                    <div style={{ display: 'flex', gap: '8px', flexShrink: 0, flexWrap: 'wrap' }}>
-                      <button onClick={() => handleToggle(p)} style={{...btnSecondary, fontSize: '12px', padding: '6px 12px'}}>
-                        {p.activo ? 'Desactivar' : 'Activar'}
-                      </button>
-                      <button onClick={() => handleEdit(p)} style={{...btnSecondary, fontSize: '12px', padding: '6px 12px'}}>
-                        Editar
-                      </button>
-                      <button onClick={() => handleDelete(p.id)} style={{...btnDanger, fontSize: '12px', padding: '6px 12px'}}>
-                        Eliminar
-                      </button>
-                    </div>
-                  </div>
-                ))}
               </div>
             )}
-          </div>
+          </>
+        )}
+
+        {/* RADAR TAB */}
+        {activeTab === 'radar' && (
+          <Radar />
         )}
       </div>
     </main>
