@@ -137,8 +137,26 @@ def get_google_trends_py() -> list:
     except:
         return []
 
+def get_gemini_model(api_key: str) -> str:
+    url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+    try:
+        r = httpx.get(url, timeout=15)
+        models = r.json().get("models", [])
+        for m in models:
+            name = m.get("name", "")
+            if "flash" in name and "generateContent" in m.get("supportedGenerationMethods", []):
+                model = name.replace("models/", "")
+                print(f"  Modelo Gemini encontrado: {model}")
+                return model
+        return "gemini-1.5-flash"
+    except Exception as e:
+        print(f"  Error consultando modelos: {e}")
+        return "gemini-1.5-flash"
+
+GEMINI_MODEL = get_gemini_model(GEMINI_API_KEY)
+
 def call_gemini(prompt: str, api_key: str) -> dict:
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={api_key}"
     body = {"contents": [{"parts": [{"text": prompt}]}]}
     try:
         r = httpx.post(url, json=body, timeout=30)
