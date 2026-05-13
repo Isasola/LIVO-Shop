@@ -2,35 +2,26 @@ name: LIVO Radar — Scraping automático
 
 on:
   schedule:
-    - cron: '0 */6 * * *'   # cada 6 horas
-  workflow_dispatch:          # también ejecutable a mano desde GitHub
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Python 3.11
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Instalar dependencias Python
-        run: |
-          pip install -r scripts/requirements.txt
-          sudo apt-get update
-          sudo apt-get install -y libasound2t64
-          playwright install chromium
+      - name: Instalar dependencias
+        run: pip install -r scripts/requirements.txt
 
       - name: Ejecutar scraper
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
         run: python scripts/scrape_radar.py
-
-      - name: Resumen
-        if: always()
-        run: echo "Scraping completado. Ver logs arriba para detalles."

@@ -1,287 +1,328 @@
 #!/usr/bin/env python3
-"""
-LIVO RADAR — Sistema de scraping automático de productos trending
-Detecta productos populares en Meta Ads, Google Trends y TikTok
-"""
-
 import os
 import sys
 import json
 import time
-import asyncio
 import httpx
-from datetime import datetime
-from typing import List, Dict, Optional
-from urllib.parse import urlencode
+import re
+from datetime import datetime, date
 from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
-
-# Supabase imports
 from supabase import create_client, Client
 
-# Playwright imports
-from playwright.async_api import async_playwright, Page, Browser
+load_dotenv()
 
-# Configuration
 SUPABASE_URL = os.getenv('SUPABASE_URL')
 SUPABASE_KEY = os.getenv('SUPABASE_KEY')
-TIMEOUT = 30000  # 30 seconds
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+META_ACCESS_TOKEN = os.getenv('META_ACCESS_TOKEN')
 
-# Keywords to search
-KEYWORDS = [
-    "mini printer", "organizador cocina", "aspiradora portátil",
-    "cámara wifi", "masajeador", "luz led", "auriculares bluetooth",
-    "reloj inteligente", "funda celular", "cargador rápido",
-    "crema facial", "suero vitamina c", "shampoo", "perfume mujer",
-    "ropa deportiva", "zapatillas", "bolso", "cartera",
-    "juguete niño", "kit cocina", "sartén", "freidora de aire",
-    "suplemento proteína", "colágeno", "vitaminas"
-]
+KEYWORDS = {
+    "hogar_cocina": [
+        "freidora de aire", "organizador cocina", "aspiradora portátil",
+        "sartén antiadherente", "licuadora portátil", "dispensador jabón",
+        "set cuchillos cocina", "soporte celular cocina", "cafetera portátil",
+        "contenedor hermético", "escurridor platos", "repisa flotante",
+        "lámpara led hogar", "ventilador portátil", "humidificador"
+    ],
+    "mascotas": [
+        "comedero automático mascotas", "cama para perro", "juguete gato",
+        "correa retráctil perro", "ropa para perro", "bebedero automático mascotas",
+        "arena sanitaria gato", "transportadora mascotas", "collar led perro"
+    ],
+    "oficina_escritorio": [
+        "soporte laptop escritorio", "mouse inalámbrico", "teclado bluetooth",
+        "lámpara escritorio usb", "organizador escritorio", "silla ergonómica",
+        "auriculares con micrófono", "webcam hd", "base enfriadora laptop",
+        "cuaderno inteligente", "agenda planificador"
+    ],
+    "belleza_personal": [
+        "masajeador facial", "plancha cabello mini", "rizador automático",
+        "set maquillaje", "crema hidratante", "suero vitamina c",
+        "kit uñas gel", "removedor maquillaje", "esponja maquillaje",
+        "perfume mujer", "kit cuidado barba", "afeitadora eléctrica"
+    ],
+    "juguetes_ninos": [
+        "drone niños", "juguete control remoto", "set lego",
+        "muñeca interactiva", "pizarra magnética", "juguete educativo",
+        "kit manualidades niños", "castillo inflable", "bicicleta niño",
+        "juego de mesa familiar", "peluche grande"
+    ],
+    "salud_bienestar": [
+        "masajeador cuello", "banda ejercicio", "colchoneta yoga",
+        "tensiómetro digital", "oxímetro", "termómetro digital",
+        "suplemento colágeno", "vitaminas", "faja reductora",
+        "rodillo masaje espalda", "pesas mano", "pistola masaje muscular"
+    ]
+}
 
-class LivoRadar:
-    def __init__(self):
-        self.supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-        self.results = []
-        self.errors = []
-        
-    async def scrape_meta_ads(self) -> Dict[str, int]:
-        """Scrape Meta Ads Library for active ads by keyword"""
-        print("\n📱 Iniciando scraping de Meta Ads Library...")
-        meta_data = {}
-        
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            
-            for keyword in KEYWORDS[:10]:  # Limit to 10 keywords for speed
-                try:
-                    page = await browser.new_page()
-                    url = f"https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=PY&search_type=keyword_unordered&q={keyword}"
-                    
-                    print(f"  🔍 Buscando: {keyword}")
-                    await page.goto(url, wait_until="networkidle", timeout=TIMEOUT)
-                    await page.wait_for_timeout(3000)
-                    
-                    # Try to count visible ads (this is a simplified approach)
-                    # In reality, Meta Ads Library requires authentication for full access
-                    try:
-                        ad_count = await page.evaluate("""
-                            () => {
-                                const ads = document.querySelectorAll('[data-testid*="ad"]');
-                                return ads.length;
-                            }
-                        """)
-                        meta_data[keyword] = max(ad_count, 1)  # At least 1
-                        print(f"    ✓ {keyword}: {meta_data[keyword]} ads detectados")
-                    except:
-                        # If evaluation fails, use a default count
-                        meta_data[keyword] = 1
-                    
-                    await page.close()
-                    await page.context.close()
-                    
-                except Exception as e:
-                    print(f"    ✗ Error en {keyword}: {str(e)}")
-                    meta_data[keyword] = 1
-                    self.errors.append(f"Meta Ads - {keyword}: {str(e)}")
-            
-            await browser.close()
-        
-        return meta_data
-
-    async def scrape_google_trends(self) -> Dict[str, int]:
-        """Fetch Google Trends data for Paraguay"""
-        print("\n🔥 Obteniendo datos de Google Trends...")
-        trends_data = {}
-        
-        try:
-            async with httpx.AsyncClient() as client:
-                url = "https://trends.google.com/trends/api/dailytrends?hl=es&tz=-240&geo=PY"
-                response = await client.get(url, timeout=TIMEOUT)
-                
-                # Google Trends returns JSONP, need to parse it
-                text = response.text
-                if text.startswith(')]}\''):
-                    text = text[5:]  # Remove JSONP wrapper
-                
-                data = json.loads(text)
-                trends = data.get('default', {}).get('trendingSearchesDays', [])
-                
-                if trends:
-                    for day in trends[:1]:  # Get today's trends
-                        for trend in day.get('trendingSearches', [])[:20]:
-                            query = trend.get('title', {}).get('query', '').lower()
-                            if query:
-                                # Check if trend matches any keyword
-                                for keyword in KEYWORDS:
-                                    if keyword.lower() in query or query in keyword.lower():
-                                        trends_data[keyword] = trends_data.get(keyword, 0) + 20
-                                        print(f"  ✓ Trend match: {keyword} (boost +20)")
-                
-                print(f"  ✓ {len(trends_data)} keywords con trend boost")
-                
-        except Exception as e:
-            print(f"  ✗ Error en Google Trends: {str(e)}")
-            self.errors.append(f"Google Trends: {str(e)}")
-        
-        return trends_data
-
-    async def scrape_tiktok_creative_center(self) -> List[str]:
-        """Scrape TikTok Creative Center for trending ads"""
-        print("\n🎵 Analizando TikTok Creative Center...")
-        tiktok_matches = []
-        
-        try:
-            async with async_playwright() as p:
-                browser = await p.chromium.launch(headless=True)
-                page = await browser.new_page()
-                
-                url = "https://ads.tiktok.com/business/creativecenter/inspiration/topads/pc/en"
-                await page.goto(url, wait_until="networkidle", timeout=TIMEOUT)
-                await page.wait_for_timeout(3000)
-                
-                # Extract visible product names
-                try:
-                    products = await page.evaluate("""
-                        () => {
-                            const elements = document.querySelectorAll('[class*="product"], [class*="ad"], h2, h3');
-                            const names = [];
-                            elements.forEach(el => {
-                                const text = el.textContent?.trim().toLowerCase();
-                                if (text && text.length > 3 && text.length < 100) {
-                                    names.push(text);
-                                }
-                            });
-                            return [...new Set(names)].slice(0, 30);
-                        }
-                    """)
-                    
-                    # Check if any products match our keywords
-                    for product in products:
-                        for keyword in KEYWORDS:
-                            if keyword.lower() in product or product in keyword.lower():
-                                if keyword not in tiktok_matches:
-                                    tiktok_matches.append(keyword)
-                                    print(f"  ✓ TikTok match: {keyword}")
-                    
-                except:
-                    pass
-                
-                await page.close()
-                await browser.close()
-                
-        except Exception as e:
-            print(f"  ✗ Error en TikTok: {str(e)}")
-            self.errors.append(f"TikTok: {str(e)}")
-        
-        return tiktok_matches
-
-    def compute_full_score(self, ads_count: int, google_trend: int, 
-                          tiktok_match: bool, competition_count: int) -> Dict:
-        """Compute trend score, viral score, and competition level"""
-        
-        # Trend score: qué tan popular es
-        trend = 0
-        trend += min(50, ads_count * 1.5)           # max 50 puntos por ads
-        trend += min(25, google_trend * 0.25)        # max 25 puntos por Google
-        trend += 25 if tiktok_match else 0           # 25 puntos si está en TikTok
-        
-        # Viral score: velocidad de crecimiento
-        viral = min(100, trend * 1.1)
-        
-        # Competencia: basado en cantidad de anunciantes distintos
-        if competition_count >= 30:
-            competition = 'high'
-        elif competition_count >= 12:
-            competition = 'medium'
-        else:
-            competition = 'low'
-        
-        # Status automático
-        status = 'hot' if trend >= 85 else 'new'
-        
+def scrape_meta_ads(keyword: str, access_token: str) -> dict:
+    url = "https://graph.facebook.com/v19.0/ads_archive"
+    params = {
+        "access_token": access_token,
+        "ad_reached_countries": "['PY']",
+        "search_terms": keyword,
+        "ad_active_status": "ACTIVE",
+        "fields": "ad_creative_body,ad_creative_link_title,page_name,impressions",
+        "limit": 50
+    }
+    try:
+        r = httpx.get(url, params=params, timeout=15)
+        data = r.json()
+        ads = data.get("data", [])
+        page_names = list(set([a.get("page_name","") for a in ads if a.get("page_name")]))
+        titulos = [a.get("ad_creative_link_title","") for a in ads[:5] if a.get("ad_creative_link_title")]
+        cuerpos = [a.get("ad_creative_body","") for a in ads[:5] if a.get("ad_creative_body")]
         return {
-            'trend_score': int(min(100, trend)),
-            'viral_score': int(min(100, viral)),
-            'competition': competition,
-            'status': status
+            "ads_count": len(ads),
+            "page_names": page_names[:5],
+            "titulos_ads": titulos,
+            "textos_ads": cuerpos,
+            "competidor_principal": page_names[0] if page_names else None
         }
+    except Exception as e:
+        print(f"  Meta error ({keyword}): {e}")
+        return {"ads_count": 0, "page_names": [], "titulos_ads": [], "textos_ads": [], "competidor_principal": None}
 
-    async def run(self):
-        """Main execution"""
-        print("=" * 60)
-        print("🚀 LIVO RADAR — Scraping automático iniciado")
-        print(f"⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print("=" * 60)
+def scrape_tiktok(keyword: str) -> dict:
+    url = "https://ads.tiktok.com/creative_radar_api/v1/popular_trend/list"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Referer": "https://ads.tiktok.com/business/creativecenter/inspiration/topads/pc/en"
+    }
+    params = {"period": 7, "country_code": "PY", "keyword": keyword, "page": 1, "limit": 20}
+    try:
+        r = httpx.get(url, params=params, headers=headers, timeout=15)
+        data = r.json()
+        items = data.get("data", {}).get("list", [])
+        return {
+            "tiktok_count": len(items),
+            "tiktok_match": len(items) > 0,
+            "tiktok_formatos": [i.get("video_info", {}).get("duration", 0) for i in items[:3]]
+        }
+    except:
+        return {"tiktok_count": 0, "tiktok_match": False, "tiktok_formatos": []}
+
+def scrape_facebook_posts(keyword: str, access_token: str) -> dict:
+    url = "https://graph.facebook.com/v19.0/search"
+    params = {
+        "access_token": access_token,
+        "q": keyword + " Paraguay venta",
+        "type": "post",
+        "fields": "message,created_time",
+        "limit": 25
+    }
+    try:
+        r = httpx.get(url, params=params, timeout=15)
+        data = r.json()
+        posts = data.get("data", [])
+        return {"marketplace_count": len(posts)}
+    except:
+        return {"marketplace_count": 0}
+
+def get_google_trends_py() -> list:
+    url = "https://trends.google.com/trends/api/dailytrends"
+    params = {"hl": "es", "tz": -240, "geo": "PY", "ns": 15}
+    try:
+        r = httpx.get(url, params=params, timeout=15)
+        text = r.text[5:]
+        data = json.loads(text)
+        searches = data["default"]["trendingSearchesDays"][0]["trendingSearches"]
+        return [s["title"]["query"].lower() for s in searches]
+    except:
+        return []
+
+def call_gemini(prompt: str, api_key: str) -> dict:
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+    body = {"contents": [{"parts": [{"text": prompt}]}]}
+    try:
+        r = httpx.post(url, json=body, timeout=30)
+        text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+        text = re.sub(r"```json|```", "", text).strip()
+        return json.loads(text)
+    except Exception as e:
+        print(f"  Gemini error: {e}")
+        return None
+
+def save_product(supabase: Client, result: dict, categoria: str, keyword: str, meta: dict, tiktok: dict, fb: dict):
+    ideas = result.get("ideas_contenido", {})
+    
+    product_data = {
+        "nombre": result["nombre_producto"],
+        "categoria": categoria,
+        "trend_score": result["trend_score"],
+        "viral_score": result["viral_score"],
+        "ads_count": meta["ads_count"],
+        "competition": result["competencia"],
+        "demanda": result["demanda"],
+        "vale_la_pena": result["vale_la_pena"],
+        "analisis_gemini": result["razon"],
+        "precio_venta_sugerido_gs": result["precio_venta_sugerido_gs"],
+        "margen_estimado_pct": result["margen_estimado_pct"],
+        "alerta": result["alerta"],
+        "source": "meta_ads,tiktok,facebook,google_trends",
+        "detected_keywords": [keyword],
+        "status": "hot" if result["trend_score"] >= 80 else "new",
+        "fuentes": ["meta", "tiktok", "facebook", "google_trends"]
+    }
+    
+    try:
+        response = supabase.table("trending_products").upsert(product_data, on_conflict="nombre").execute()
+        if not response.data:
+            return
+        product_id = response.data[0]["id"]
         
-        try:
-            # Scrape all sources
-            meta_data = await self.scrape_meta_ads()
-            google_trends = await self.scrape_google_trends()
-            tiktok_matches = await self.scrape_tiktok_creative_center()
-            
-            # Process and upsert data
-            print("\n💾 Guardando datos en Supabase...")
-            updated_count = 0
-            
-            for keyword in KEYWORDS:
-                ads_count = meta_data.get(keyword, 1)
-                google_trend = google_trends.get(keyword, 0)
-                tiktok_match = keyword in tiktok_matches
-                
-                # Estimate competition (simplified)
-                competition_count = ads_count * 2
-                
-                # Compute scores
-                scores = self.compute_full_score(ads_count, google_trend, tiktok_match, competition_count)
-                
-                # Prepare payload
-                payload = {
-                    'nombre': keyword.title(),
-                    'categoria': 'Electrónica',  # Default category
-                    'trend_score': scores['trend_score'],
-                    'viral_score': scores['viral_score'],
-                    'ads_count': ads_count,
-                    'competition': scores['competition'],
-                    'source': 'meta,google' if google_trend > 0 else 'meta',
-                    'detected_keywords': [keyword],
-                    'status': scores['status'],
-                    'image_url': None,
-                }
-                
-                # Upsert to Supabase
-                try:
-                    response = self.supabase.table('trending_products').upsert(
-                        payload,
-                        on_conflict='nombre'
-                    ).execute()
-                    
-                    updated_count += 1
-                    print(f"  ✓ {keyword} → trend:{scores['trend_score']}, ads:{ads_count}, comp:{scores['competition']}")
-                    
-                except Exception as e:
-                    print(f"  ✗ Error guardando {keyword}: {str(e)}")
-                    self.errors.append(f"Upsert {keyword}: {str(e)}")
-            
-            # Print summary
-            print("\n" + "=" * 60)
-            print(f"✅ Scraping completado")
-            print(f"📊 {updated_count} productos actualizados")
-            print(f"⚠️  {len(self.errors)} errores")
-            if self.errors:
-                print("\nErrores:")
-                for error in self.errors:
-                    print(f"  - {error}")
-            print("=" * 60)
-            
-        except Exception as e:
-            print(f"\n❌ Error fatal: {str(e)}")
-            sys.exit(1)
+        # Guardar ideas de contenido por plataforma
+        for plataforma in ["tiktok", "reels", "facebook"]:
+            idea = ideas.get(plataforma, {})
+            if not idea:
+                continue
+            supabase.table("content_ideas").upsert({
+                "producto_id": product_id,
+                "producto_nombre": result["nombre_producto"],
+                "plataforma": plataforma,
+                "formato": idea.get("formato"),
+                "hook": idea.get("hook"),
+                "guion": idea.get("guion"),
+                "descripcion_visual": idea.get("descripcion_visual"),
+                "hashtags": idea.get("hashtags", []),
+                "musica_sugerida": idea.get("musica"),
+                "duracion_segundos": idea.get("duracion_segundos"),
+                "competidor_referencia": meta.get("competidor_principal"),
+                "competidor_formato": result.get("competidor_formato"),
+                "competidor_hook": result.get("competidor_hook")
+            }, on_conflict="producto_id,plataforma").execute()
+    except Exception as e:
+        print(f"  Error guardando en Supabase: {e}")
+
+def generate_daily_report(supabase: Client, api_key: str):
+    response = supabase.table("trending_products")\
+        .select("*")\
+        .eq("vale_la_pena", True)\
+        .gte("created_at", date.today().isoformat())\
+        .order("trend_score", desc=True)\
+        .limit(3)\
+        .execute()
+    
+    top3 = response.data
+    if len(top3) < 1:
+        print("Sin productos para reporte diario")
+        return
+    
+    productos_txt = "\n".join([
+        f"{i+1}. {p['nombre']} — trend: {p['trend_score']}, competencia: {p['competition']}, demanda: {p['demanda']}, margen: {p['margen_estimado_pct']}%"
+        for i, p in enumerate(top3)
+    ])
+    
+    prompt = f"""
+Sos un analista experto en comercio electrónico para Paraguay con foco en ventas por redes sociales.
+Top productos más vendibles detectados HOY:
+{productos_txt}
+Generá una guía de acción concreta para un vendedor paraguayo que vende por TikTok, Instagram y Facebook.
+Respondé SOLO con JSON válido sin texto adicional ni backticks:
+{{
+  "titulo": "título atractivo del reporte de hoy (máximo 10 palabras)",
+  "resumen": "párrafo de 3 oraciones explicando qué está pasando en el mercado hoy",
+  "producto_estrella": "nombre exacto del producto #1",
+  "por_que_today": "razón específica y concreta de por qué este producto es oportunidad AHORA en Paraguay",
+  "accion_inmediata": "qué hacer exactamente en las próximas 24 horas para empezar a venderlo",
+  "idea_video_rapida": "idea de video de 30 segundos que podés grabar hoy mismo con el celular",
+  "advertencia": "riesgo principal a tener en cuenta o null"
+}}
+"""
+    
+    result = call_gemini(prompt, api_key)
+    if not result:
+        return
+    
+    supabase.table("radar_daily_report").insert({
+        "titulo": result["titulo"],
+        "resumen": result["resumen"],
+        "producto_estrella": result["producto_estrella"],
+        "por_que_hoy": result["por_que_today"],
+        "accion_inmediata": result["accion_inmediata"],
+        "advertencia": result.get("advertencia"),
+        "top3_ids": [p["id"] for p in top3]
+    }).execute()
+    
+    print(f"✓ Reporte diario generado: {result['titulo']}")
 
 async def main():
-    radar = LivoRadar()
-    await radar.run()
+    if not all([SUPABASE_URL, SUPABASE_KEY, GEMINI_API_KEY, META_ACCESS_TOKEN]):
+        print("Faltan variables de entorno.")
+        return
 
-if __name__ == '__main__':
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    google_trends = get_google_trends_py()
+    print(f"Google Trends PY hoy: {google_trends}")
+    
+    total_ok = 0
+    total_err = 0
+    
+    for categoria, keywords in KEYWORDS.items():
+        print(f"\n── Categoría: {categoria} ──")
+        for keyword in keywords:
+            print(f"  Procesando: {keyword}")
+            try:
+                meta = scrape_meta_ads(keyword, META_ACCESS_TOKEN)
+                tiktok = scrape_tiktok(keyword)
+                fb = scrape_facebook_posts(keyword, META_ACCESS_TOKEN)
+                en_trends = any(keyword.lower() in t for t in google_trends)
+                
+                prompt = f"""
+Eres un analista experto en comercio electrónico y marketing digital para Paraguay.
+Tenés experiencia en TikTok, Instagram Reels y Facebook Ads.
+Analizá este producto con los datos reales:
+PRODUCTO: {keyword}
+CATEGORÍA: {categoria}
+ADS ACTIVOS EN META PARAGUAY: {meta['ads_count']}
+PÁGINAS COMPETIDORAS ANUNCIANDO: {meta['page_names']}
+FRASES QUE USAN EN SUS ADS: {meta['textos_ads']}
+TÍTULOS DE ADS DE COMPETIDORES: {meta['titulos_ads']}
+COMPETIDOR PRINCIPAL DETECTADO: {meta['competidor_principal']}
+POSTS EN FACEBOOK PARAGUAY: {fb['marketplace_count']}
+EN TIKTOK ADS: {tiktok['tiktok_match']} ({tiktok['tiktok_count']} videos)
+EN GOOGLE TRENDS PY HOY: {en_trends}
+
+Respondé SOLO con este JSON válido, sin texto adicional, sin backticks, sin markdown:
+{{
+  "nombre_producto": "nombre comercial real y atractivo del producto",
+  "vale_la_pena": true o false,
+  "razon": "máximo 2 oraciones basadas en los datos reales",
+  "competencia": "low, medium o high",
+  "demanda": "low, medium o high",
+  "trend_score": número 0-100,
+  "viral_score": número 0-100,
+  "precio_venta_sugerido_gs": número entero en guaraníes,
+  "margen_estimado_pct": número 0-100,
+  "alerta": "texto corto sobre riesgo o null",
+  "competidor_formato": "qué formato de video usa el competidor principal (unboxing/review/tutorial/comparacion/hook_directo)",
+  "competidor_hook": "frase o estilo que usa el competidor para enganchar en los primeros segundos",
+  "ideas_contenido": {{
+    "tiktok": {{ "formato": "...", "hook": "...", "guion": "...", "descripcion_visual": "...", "hashtags": [], "musica": "...", "duracion_segundos": 30 }},
+    "reels": {{ "formato": "...", "hook": "...", "guion": "...", "descripcion_visual": "...", "hashtags": [], "musica": "...", "duracion_segundos": 20 }},
+    "facebook": {{ "formato": "...", "hook": "...", "guion": "...", "descripcion_visual": "...", "hashtags": [], "musica": "...", "duracion_segundos": 45 }}
+  }}
+}}
+"""
+                result = call_gemini(prompt, GEMINI_API_KEY)
+                
+                if result:
+                    save_product(supabase, result, categoria, keyword, meta, tiktok, fb)
+                    print(f"  ✓ {result['nombre_producto']} — score: {result['trend_score']}, vale: {result['vale_la_pena']}")
+                    total_ok += 1
+                else:
+                    total_err += 1
+                    
+                time.sleep(1)
+                
+            except Exception as e:
+                print(f"  ✗ Error en {keyword}: {e}")
+                total_err += 1
+    
+    print(f"\n── Generando reporte diario ──")
+    generate_daily_report(supabase, GEMINI_API_KEY)
+    print(f"\n✓ Scraping completo: {total_ok} productos, {total_err} errores")
+
+if __name__ == "__main__":
+    import asyncio
     asyncio.run(main())

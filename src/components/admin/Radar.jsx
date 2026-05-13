@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 
 const PLACEHOLDER_GRADIENT = 'linear-gradient(135deg, #E8780A 0%, #B85C00 100%)'
 
@@ -8,12 +8,17 @@ export default function Radar() {
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [filter, setFilter] = useState('all') // 'all' | 'hot' | 'low-comp'
+  const [filter, setFilter] = useState('all') // 'all' | 'recommended' | 'hot' | 'low-comp' | 'with-ideas'
   const [importing, setImporting] = useState({})
   const [toast, setToast] = useState(null)
+  const [dailyReport, setDailyReport] = useState(null)
+  const [selectedProduct, setSelectedProduct] = useState(null)
+  const [contentIdeas, setContentIdeas] = useState([])
+  const [loadingIdeas, setLoadingIdeas] = useState(false)
 
   useEffect(() => {
     fetchRadarProducts()
+    fetchDailyReport()
   }, [])
 
   const fetchRadarProducts = async () => {
@@ -34,47 +39,55 @@ export default function Radar() {
     }
   }
 
+  const fetchDailyReport = async () => {
+    const today = new Date().toISOString().split('T')[0]
+    const { data } = await supabase
+      .from('radar_daily_report')
+      .select('*')
+      .eq('fecha', today)
+      .order('created_at', { ascending: false })
+      .limit(1)
+    
+    if (data && data[0]) setDailyReport(data[0])
+  }
+
+  const fetchContentIdeas = async (productId) => {
+    setLoadingIdeas(true)
+    const { data } = await supabase
+      .from('content_ideas')
+      .select('*')
+      .eq('producto_id', productId)
+    
+    setContentIdeas(data || [])
+    setLoadingIdeas(false)
+  }
+
   const filteredProducts = products.filter(p => {
+    if (filter === 'recommended') return p.vale_la_pena === true
     if (filter === 'hot') return p.trend_score >= 85
     if (filter === 'low-comp') return p.competition === 'low'
+    // For 'with-ideas', we'd ideally need a join or a flag, but for now we filter locally
     return true
   })
 
   const handleImport = async (product) => {
     setImporting(prev => ({ ...prev, [product.id]: true }))
-    
     try {
-      // Insert into productos
       const newProduct = {
         nombre: product.nombre,
         categoria: product.categoria,
-        descripcion: `Detectado por LIVO Radar con ${product.ads_count} ads activos. Keywords: ${(product.detected_keywords || []).join(', ')}`,
-        precio_gs: null,
+        descripcion: `Detectado por LIVO Radar con ${product.ads_count} ads activos. Análisis: ${product.analisis_gemini}`,
+        precio_gs: product.precio_venta_sugerido_gs,
         tipo: 'dropshipping',
         activo: false,
         destacado: false,
         imagenes: product.image_url ? [product.image_url] : [],
       }
-
-      const { error: insertErr } = await supabase
-        .from('productos')
-        .insert(newProduct)
-      
+      const { error: insertErr } = await supabase.from('productos').insert(newProduct)
       if (insertErr) throw insertErr
-
-      // Mark as imported
-      const { error: updateErr } = await supabase
-        .from('trending_products')
-        .update({ status: 'imported' })
-        .eq('id', product.id)
-      
+      const { error: updateErr } = await supabase.from('trending_products').update({ status: 'imported' }).eq('id', product.id)
       if (updateErr) throw updateErr
-
-      // Update local state
-      setProducts(prev => prev.map(p => 
-        p.id === product.id ? { ...p, status: 'imported' } : p
-      ))
-
+      setProducts(prev => prev.map(p => p.id === product.id ? { ...p, status: 'imported' } : p))
       showToast('✓ Producto importado al catálogo', 'success')
     } catch (err) {
       showToast('Error al importar: ' + err.message, 'error')
@@ -88,53 +101,73 @@ export default function Radar() {
     setTimeout(() => setToast(null), 3000)
   }
 
-  const getCompetitionColor = (comp) => {
-    if (comp === 'low') return '#3B6D11'
-    if (comp === 'medium') return '#E8780A'
+  const openIdeas = (product) => {
+    setSelectedProduct(product)
+    fetchContentIdeas(product.id)
+  }
+
+  const getMargenColor = (pct) => {
+    if (pct > 30) return '#3B6D11'
+    if (pct > 15) return '#E8780A'
     return '#A32D2D'
-  }
-
-  const getTrendColor = (score) => {
-    if (score >= 80) return '#3B6D11'
-    if (score >= 60) return '#E8780A'
-    return '#A32D2D'
-  }
-
-  const getSourceBadges = (source) => {
-    const badges = []
-    if (source?.includes('meta')) badges.push('Meta Ads')
-    if (source?.includes('tiktok')) badges.push('TikTok')
-    if (source?.includes('google')) badges.push('Google Trends')
-    return badges
-  }
-
-  const getDaysAgo = (createdAt) => {
-    const days = Math.floor((Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60 * 24))
-    return days === 0 ? 'Hoy' : `Hace ${days} día${days > 1 ? 's' : ''}`
   }
 
   return (
-    <div style={{ padding: '0 0 32px' }}>
+    <div style={{ padding: '0 0 32px', position: 'relative' }}>
       {/* Toast */}
-      {toast && (
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            style={{
+              position: 'fixed', top: '20px', right: '20px', padding: '12px 16px', borderRadius: '10px',
+              background: toast.type === 'success' ? '#EAF3DE' : '#FCEBEB',
+              color: toast.type === 'success' ? '#3B6D11' : '#A32D2D',
+              fontSize: '14px', fontWeight: 500, zIndex: 1000,
+            }}
+          >
+            {toast.msg}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Daily Report Banner */}
+      {dailyReport && (
         <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -10 }}
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
           style={{
-            position: 'fixed',
-            top: '20px',
-            right: '20px',
-            padding: '12px 16px',
-            borderRadius: '10px',
-            background: toast.type === 'success' ? '#EAF3DE' : '#FCEBEB',
-            color: toast.type === 'success' ? '#3B6D11' : '#A32D2D',
-            fontSize: '14px',
-            fontWeight: 500,
-            zIndex: 1000,
+            background: 'white', border: '2px solid var(--brand)', borderRadius: '16px',
+            padding: '24px', marginBottom: '40px', position: 'relative', overflow: 'hidden'
           }}
         >
-          {toast.msg}
+          <div style={{ position: 'absolute', top: 0, right: 0, padding: '8px 16px', background: 'var(--brand)', color: 'white', fontSize: '12px', fontWeight: 700, borderBottomLeftRadius: '12px' }}>
+            REPORTE DEL DÍA
+          </div>
+          <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '24px', fontWeight: 700, marginBottom: '12px', color: 'var(--dark)' }}>
+            {dailyReport.titulo}
+          </h2>
+          <div style={{ display: 'inline-block', background: 'var(--brand-light)', color: 'var(--brand)', padding: '6px 12px', borderRadius: '8px', fontSize: '14px', fontWeight: 700, marginBottom: '16px' }}>
+            ⭐ Producto Estrella: {dailyReport.producto_estrella}
+          </div>
+          <p style={{ fontSize: '15px', color: '#444', marginBottom: '20px', lineHeight: 1.5 }}>{dailyReport.resumen}</p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+            <div>
+              <p style={{ fontSize: '12px', fontWeight: 700, color: '#3B6D11', textTransform: 'uppercase', marginBottom: '4px' }}>Acción Inmediata:</p>
+              <p style={{ fontSize: '14px', color: '#333' }}>{dailyReport.accion_inmediata}</p>
+            </div>
+            <div>
+              <p style={{ fontSize: '12px', fontWeight: 700, color: 'var(--brand)', textTransform: 'uppercase', marginBottom: '4px' }}>🎥 Idea de video rápida:</p>
+              <p style={{ fontSize: '14px', color: '#333' }}>{dailyReport.por_que_hoy}</p>
+            </div>
+          </div>
+          {dailyReport.advertencia && (
+            <div style={{ marginTop: '20px', padding: '12px', background: '#FFFBEB', border: '1px solid #FEF3C7', borderRadius: '8px', color: '#92400E', fontSize: '13px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+              ⚠️ <strong>Atención:</strong> {dailyReport.advertencia}
+            </div>
+          )}
         </motion.div>
       )}
 
@@ -144,7 +177,7 @@ export default function Radar() {
           🔥 LIVO Radar
         </h2>
         <p style={{ fontSize: '14px', color: '#6B6B6B' }}>
-          Productos trending detectados en tiempo real
+          Inteligencia de mercado y contenido para Paraguay
         </p>
       </div>
 
@@ -152,6 +185,7 @@ export default function Radar() {
       <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', flexWrap: 'wrap' }}>
         {[
           { id: 'all', label: 'Todos' },
+          { id: 'recommended', label: '✓ Recomendados' },
           { id: 'hot', label: '🔥 HOT' },
           { id: 'low-comp', label: '📉 Baja competencia' },
         ].map(f => (
@@ -159,15 +193,10 @@ export default function Radar() {
             key={f.id}
             onClick={() => setFilter(f.id)}
             style={{
-              padding: '8px 16px',
-              borderRadius: '8px',
-              border: 'none',
+              padding: '8px 16px', borderRadius: '8px', border: 'none',
               background: filter === f.id ? 'var(--brand)' : '#F0F0F0',
               color: filter === f.id ? 'white' : '#6B6B6B',
-              fontSize: '13px',
-              fontWeight: 500,
-              cursor: 'pointer',
-              transition: 'all 0.2s',
+              fontSize: '13px', fontWeight: 500, cursor: 'pointer', transition: 'all 0.2s',
             }}
           >
             {f.label}
@@ -175,325 +204,147 @@ export default function Radar() {
         ))}
       </div>
 
-      {/* Counter */}
-      <p style={{ fontSize: '13px', color: '#6B6B6B', marginBottom: '24px' }}>
-        {filteredProducts.length} producto{filteredProducts.length !== 1 ? 's' : ''} detectado{filteredProducts.length !== 1 ? 's' : ''}
-      </p>
-
-      {/* Loading State */}
-      {loading && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' }}>
-          {[...Array(6)].map((_, i) => (
-            <motion.div
-              key={i}
-              animate={{ opacity: [0.5, 1, 0.5] }}
-              transition={{ duration: 2, repeat: Infinity }}
-              style={{
-                background: '#F0F0F0',
-                borderRadius: '12px',
-                height: '400px',
-              }}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* Error State */}
-      {error && !loading && (
-        <div style={{
-          padding: '24px',
-          borderRadius: '12px',
-          background: '#FCEBEB',
-          color: '#A32D2D',
-          textAlign: 'center',
-        }}>
-          <p style={{ marginBottom: '12px' }}>Error: {error}</p>
-          <button
-            onClick={fetchRadarProducts}
-            style={{
-              padding: '8px 16px',
-              borderRadius: '8px',
-              border: 'none',
-              background: '#A32D2D',
-              color: 'white',
-              cursor: 'pointer',
-              fontSize: '13px',
-              fontWeight: 500,
-            }}
-          >
-            Reintentar
-          </button>
-        </div>
-      )}
-
-      {/* Empty State */}
-      {!loading && !error && filteredProducts.length === 0 && (
-        <div style={{
-          padding: '60px 24px',
-          textAlign: 'center',
-          color: '#6B6B6B',
-        }}>
-          <div style={{ fontSize: '48px', marginBottom: '16px' }}>📭</div>
-          <p style={{ fontSize: '16px', fontWeight: 500, marginBottom: '8px' }}>
-            Todavía no hay productos detectados
-          </p>
-          <p style={{ fontSize: '13px' }}>
-            El Radar se actualiza automáticamente cada 6 horas
-          </p>
-        </div>
-      )}
-
       {/* Grid */}
-      {!loading && !error && filteredProducts.length > 0 && (
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-          gap: '20px',
-        }}>
-          {filteredProducts.map((product, idx) => (
+      {loading ? (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
+          {[...Array(6)].map((_, i) => <div key={i} style={{ background: '#F0F0F0', borderRadius: '12px', height: '450px' }} className="animate-pulse" />)}
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '24px' }}>
+          {filteredProducts.map((p, idx) => (
             <motion.div
-              key={product.id}
+              key={p.id}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: idx * 0.05 }}
-              whileHover={{ scale: 1.02 }}
-              style={{
-                background: 'white',
-                border: '1px solid #E8E4DE',
-                borderRadius: '12px',
-                overflow: 'hidden',
-              }}
+              style={{ background: 'white', border: '1px solid #E8E4DE', borderRadius: '16px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
             >
-              {/* Image */}
-              <div
-                style={{
-                  position: 'relative',
-                  width: '100%',
-                  height: '160px',
-                  background: product.image_url ? 'none' : PLACEHOLDER_GRADIENT,
-                  backgroundImage: product.image_url ? `url(${product.image_url})` : 'none',
-                  backgroundSize: 'cover',
-                  backgroundPosition: 'center',
-                }}
-              >
-                {/* Badges */}
-                <div style={{ position: 'absolute', top: '8px', left: '8px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                  {product.trend_score >= 85 && (
-                    <motion.div
-                      animate={{ scale: [1, 1.05, 1] }}
-                      transition={{ duration: 2, repeat: Infinity }}
-                      style={{
-                        background: '#A32D2D',
-                        color: 'white',
-                        padding: '4px 8px',
-                        borderRadius: '4px',
-                        fontSize: '10px',
-                        fontWeight: 600,
-                      }}
-                    >
-                      HOT
-                    </motion.div>
+              <div style={{ height: '180px', background: p.image_url ? `url(${p.image_url}) center/cover` : PLACEHOLDER_GRADIENT, position: 'relative' }}>
+                <div style={{ position: 'absolute', top: '12px', left: '12px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                  {p.vale_la_pena ? (
+                    <span style={{ background: '#3B6D11', color: 'white', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>✓ VALE LA PENA</span>
+                  ) : (
+                    <span style={{ background: '#A32D2D', color: 'white', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>✗ NO RECOMENDADO</span>
                   )}
-                  {product.viral_score >= 80 && (
-                    <div style={{
-                      background: '#7C3AED',
-                      color: 'white',
-                      padding: '4px 8px',
-                      borderRadius: '4px',
-                      fontSize: '10px',
-                      fontWeight: 600,
-                    }}>
-                      VIRAL
-                    </div>
-                  )}
-                  {product.competition === 'low' && (
-                    <div style={{
-                      background: '#3B6D11',
-                      color: 'white',
-                      padding: '4px 8px',
-                      borderRadius: '4px',
-                      fontSize: '10px',
-                      fontWeight: 600,
-                    }}>
-                      LOW COMP
-                    </div>
-                  )}
+                  {p.trend_score >= 85 && <span style={{ background: 'var(--brand)', color: 'white', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>🔥 HOT</span>}
                 </div>
               </div>
-
-              {/* Body */}
-              <div style={{ padding: '16px' }}>
-                {/* Name + Category */}
-                <h3 style={{
-                  fontFamily: 'var(--font-display)',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  marginBottom: '8px',
-                  lineHeight: 1.3,
-                }}>
-                  {product.nombre}
-                </h3>
-                <div style={{ marginBottom: '12px' }}>
-                  <span style={{
-                    display: 'inline-block',
-                    background: '#F0F0F0',
-                    color: '#6B6B6B',
-                    padding: '4px 8px',
-                    borderRadius: '4px',
-                    fontSize: '11px',
-                    fontWeight: 500,
-                  }}>
-                    {product.categoria}
-                  </span>
-                </div>
-
-                {/* Metrics Grid */}
-                <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 1fr',
-                  gap: '12px',
-                  marginBottom: '12px',
-                  paddingBottom: '12px',
-                  borderBottom: '1px solid #F0F0F0',
-                }}>
-                  {/* Trend Score */}
+              
+              <div style={{ padding: '20px', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '16px', fontWeight: 700, marginBottom: '4px' }}>{p.nombre}</h3>
+                <p style={{ fontSize: '12px', color: '#6B6B6B', marginBottom: '16px' }}>{p.categoria}</p>
+                
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
                   <div>
-                    <div style={{ fontSize: '11px', color: '#6B6B6B', marginBottom: '4px' }}>🔥 Trend</div>
-                    <div style={{ fontSize: '18px', fontWeight: 700, color: getTrendColor(product.trend_score) }}>
-                      {product.trend_score}
-                    </div>
-                    <div style={{
-                      width: '100%',
-                      height: '4px',
-                      background: '#F0F0F0',
-                      borderRadius: '2px',
-                      marginTop: '4px',
-                      overflow: 'hidden',
-                    }}>
-                      <div style={{
-                        width: `${product.trend_score}%`,
-                        height: '100%',
-                        background: getTrendColor(product.trend_score),
-                        transition: 'width 0.3s',
-                      }} />
-                    </div>
+                    <p style={{ fontSize: '10px', color: '#999', textTransform: 'uppercase' }}>Precio Sugerido</p>
+                    <p style={{ fontSize: '16px', fontWeight: 700 }}>₲ {p.precio_venta_sugerido_gs?.toLocaleString('es-PY') || '---'}</p>
                   </div>
-
-                  {/* Ads Count */}
                   <div>
-                    <div style={{ fontSize: '11px', color: '#6B6B6B', marginBottom: '4px' }}>📢 Ads</div>
-                    <div style={{ fontSize: '18px', fontWeight: 700 }}>
-                      {product.ads_count}
-                    </div>
-                    <div style={{ fontSize: '10px', color: '#6B6B6B', marginTop: '4px' }}>
-                      anuncios
-                    </div>
-                  </div>
-
-                  {/* Viral Score */}
-                  <div>
-                    <div style={{ fontSize: '11px', color: '#6B6B6B', marginBottom: '4px' }}>⚡ Viral</div>
-                    <div style={{ fontSize: '18px', fontWeight: 700, color: '#E8780A' }}>
-                      {product.viral_score}
-                    </div>
-                    <div style={{
-                      width: '100%',
-                      height: '4px',
-                      background: '#F0F0F0',
-                      borderRadius: '2px',
-                      marginTop: '4px',
-                      overflow: 'hidden',
-                    }}>
-                      <div style={{
-                        width: `${product.viral_score}%`,
-                        height: '100%',
-                        background: '#E8780A',
-                        transition: 'width 0.3s',
-                      }} />
-                    </div>
-                  </div>
-
-                  {/* Competition */}
-                  <div>
-                    <div style={{ fontSize: '11px', color: '#6B6B6B', marginBottom: '4px' }}>🏆 Comp</div>
-                    <div style={{
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      color: getCompetitionColor(product.competition),
-                    }}>
-                      {product.competition?.toUpperCase()}
-                    </div>
+                    <p style={{ fontSize: '10px', color: '#999', textTransform: 'uppercase' }}>Margen Est.</p>
+                    <p style={{ fontSize: '16px', fontWeight: 700, color: getMargenColor(p.margen_estimado_pct) }}>{p.margen_estimado_pct}%</p>
                   </div>
                 </div>
 
-                {/* Sources + Date */}
-                <div style={{ marginBottom: '12px' }}>
-                  <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '6px' }}>
-                    {getSourceBadges(product.source).map(badge => (
-                      <span
-                        key={badge}
-                        style={{
-                          background: '#FFF4E8',
-                          color: '#E8780A',
-                          padding: '3px 6px',
-                          borderRadius: '3px',
-                          fontSize: '10px',
-                          fontWeight: 500,
-                        }}
-                      >
-                        {badge}
-                      </span>
-                    ))}
-                  </div>
-                  <div style={{ fontSize: '10px', color: '#999' }}>
-                    {getDaysAgo(product.created_at)}
-                  </div>
+                <div style={{ background: '#F9F9F9', padding: '12px', borderRadius: '8px', marginBottom: '16px', flex: 1 }}>
+                  <p style={{ fontSize: '12px', color: '#444', fontStyle: 'italic' }}>"{p.analisis_gemini}"</p>
                 </div>
 
-                {/* Import Button */}
-                {product.status !== 'imported' ? (
-                  <button
-                    onClick={() => handleImport(product)}
-                    disabled={importing[product.id]}
-                    style={{
-                      width: '100%',
-                      padding: '10px',
-                      borderRadius: 'var(--radius)',
-                      border: 'none',
-                      background: 'var(--brand)',
-                      color: 'white',
-                      fontSize: '13px',
-                      fontWeight: 600,
-                      cursor: importing[product.id] ? 'not-allowed' : 'pointer',
-                      opacity: importing[product.id] ? 0.6 : 1,
-                      transition: 'all 0.2s',
-                    }}
-                  >
-                    {importing[product.id] ? '⏳ Importando...' : '→ Importar producto'}
-                  </button>
-                ) : (
-                  <button
-                    disabled
-                    style={{
-                      width: '100%',
-                      padding: '10px',
-                      borderRadius: 'var(--radius)',
-                      border: 'none',
-                      background: '#F0F0F0',
-                      color: '#6B6B6B',
-                      fontSize: '13px',
-                      fontWeight: 600,
-                      cursor: 'not-allowed',
-                    }}
-                  >
-                    ✓ Importado
-                  </button>
+                {p.alerta && (
+                  <div style={{ padding: '8px 12px', background: '#FFFBEB', borderRadius: '8px', color: '#92400E', fontSize: '11px', marginBottom: '16px', display: 'flex', gap: '6px' }}>
+                    ⚠️ {p.alerta}
+                  </div>
                 )}
+
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    onClick={() => openIdeas(p)}
+                    style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid var(--brand)', background: 'white', color: 'var(--brand)', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+                  >
+                    💡 Ideas Video
+                  </button>
+                  <button
+                    onClick={() => handleImport(p)}
+                    disabled={p.status === 'imported' || importing[p.id]}
+                    style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: p.status === 'imported' ? '#F0F0F0' : 'var(--brand)', color: p.status === 'imported' ? '#999' : 'white', fontSize: '12px', fontWeight: 700, cursor: p.status === 'imported' ? 'not-allowed' : 'pointer' }}
+                  >
+                    {p.status === 'imported' ? '✓ Importado' : importing[p.id] ? '⏳...' : '→ Importar'}
+                  </button>
+                </div>
               </div>
             </motion.div>
           ))}
         </div>
       )}
+
+      {/* Side Panel for Ideas */}
+      <AnimatePresence>
+        {selectedProduct && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => setSelectedProduct(null)}
+              style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1000 }}
+            />
+            <motion.div
+              initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: '100%', maxWidth: '500px', background: 'white', zIndex: 1001, overflowY: 'auto', padding: '40px' }}
+            >
+              <button onClick={() => setSelectedProduct(null)} style={{ position: 'absolute', top: '20px', right: '20px', background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer' }}>✕</button>
+              
+              <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '24px', fontWeight: 700, marginBottom: '8px' }}>💡 Ideas de Contenido</h2>
+              <p style={{ color: '#6B6B6B', marginBottom: '32px' }}>{selectedProduct.nombre}</p>
+
+              {loadingIdeas ? (
+                <div style={{ textAlign: 'center', padding: '40px' }}>Cargando ideas...</div>
+              ) : contentIdeas.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '40px', color: '#999' }}>No se encontraron ideas para este producto.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+                  {contentIdeas.map(idea => (
+                    <div key={idea.id} style={{ borderBottom: '1px solid #EEE', paddingBottom: '32px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                        <span style={{ background: '#F0F0F0', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 700, textTransform: 'uppercase' }}>{idea.plataforma}</span>
+                        <span style={{ fontSize: '12px', color: '#999' }}>{idea.formato} · {idea.duracion_segundos}s</span>
+                      </div>
+                      
+                      <div style={{ marginBottom: '20px' }}>
+                        <p style={{ fontSize: '11px', color: 'var(--brand)', fontWeight: 700, textTransform: 'uppercase', marginBottom: '4px' }}>Hook (Primeros 3 seg):</p>
+                        <p style={{ fontSize: '18px', fontWeight: 700, color: 'var(--dark)', lineHeight: 1.3 }}>"{idea.hook}"</p>
+                      </div>
+
+                      <div style={{ marginBottom: '20px' }}>
+                        <p style={{ fontSize: '11px', color: '#999', fontWeight: 700, textTransform: 'uppercase', marginBottom: '8px' }}>Guión Escena por Escena:</p>
+                        <div style={{ fontSize: '14px', color: '#444', whiteSpace: 'pre-line', lineHeight: 1.6, background: '#F9F9F9', padding: '16px', borderRadius: '12px' }}>
+                          {idea.guion}
+                        </div>
+                      </div>
+
+                      <div style={{ marginBottom: '20px' }}>
+                        <p style={{ fontSize: '11px', color: '#999', fontWeight: 700, textTransform: 'uppercase', marginBottom: '8px' }}>Música Sugerida:</p>
+                        <p style={{ fontSize: '14px', color: '#444' }}>🎵 {idea.musica_sugerida}</p>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        {(idea.hashtags || []).map(h => <span key={h} style={{ fontSize: '11px', color: '#6B6B6B', background: '#F0F0F0', padding: '2px 8px', borderRadius: '4px' }}>#{h}</span>)}
+                      </div>
+                    </div>
+                  ))}
+                  
+                  {contentIdeas[0]?.competidor_referencia && (
+                    <div style={{ background: '#FFF4E8', padding: '20px', borderRadius: '16px', border: '1px solid var(--brand-light)' }}>
+                      <p style={{ fontSize: '12px', fontWeight: 700, color: 'var(--brand)', marginBottom: '12px' }}>🕵️ LO QUE HACE LA COMPETENCIA</p>
+                      <p style={{ fontSize: '13px', marginBottom: '8px' }}><strong>Competidor:</strong> {contentIdeas[0].competidor_referencia}</p>
+                      <p style={{ fontSize: '13px', marginBottom: '8px' }}><strong>Formato:</strong> {contentIdeas[0].competidor_formato}</p>
+                      <p style={{ fontSize: '13px' }}><strong>Hook:</strong> "{contentIdeas[0].competidor_hook}"</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
