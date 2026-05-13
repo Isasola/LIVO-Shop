@@ -11,10 +11,16 @@ from supabase import create_client, Client
 
 load_dotenv()
 
-SUPABASE_URL = os.getenv('SUPABASE_URL')
-SUPABASE_KEY = os.getenv('SUPABASE_KEY')
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
-META_ACCESS_TOKEN = os.getenv('META_ACCESS_TOKEN')
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").strip()
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "").strip()
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+META_ACCESS_TOKEN = os.environ.get("META_ACCESS_TOKEN", "").strip()
+
+# Validación al inicio
+if not SUPABASE_URL or not SUPABASE_URL.startswith("https://"):
+    raise ValueError(f"SUPABASE_URL inválida: '{SUPABASE_URL}'")
+if not SUPABASE_KEY:
+    raise ValueError("SUPABASE_KEY no encontrada")
 
 KEYWORDS = {
     "hogar_cocina": [
