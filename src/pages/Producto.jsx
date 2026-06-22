@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useCart } from '../lib/CartContext'
+import { trackVista, trackWhatsapp, trackCarrito } from '../lib/tracking'
 
 export default function Producto() {
   const { id } = useParams()
@@ -15,7 +16,7 @@ export default function Producto() {
 
   useEffect(() => {
     supabase.from('productos').select('*').eq('id', id).single()
-      .then(({ data }) => { setProduct(data); setLoading(false) })
+      .then(({ data }) => { setProduct(data); setLoading(false); trackVista(id) })
   }, [id])
 
   if (loading) return <div style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><p style={{ color: '#6B6B6B' }}>Cargando...</p></div>
@@ -27,11 +28,13 @@ export default function Producto() {
 
   const handleAdd = () => {
     add(product, variante)
+    trackCarrito(product.id)
     setAdded(true)
     setTimeout(() => setAdded(false), 1500)
   }
 
   const whatsappDirect = () => {
+    trackWhatsapp(product.id)
     const v = variante ? ` — ${variante}` : ''
     const precio = hasPrice ? ` (Gs. ${product.precio_gs.toLocaleString('es-PY')})` : ''
     const msg = `Hola LIVOshop! Me interesa el producto: *${product.nombre}*${v}${precio}. ¿Está disponible?`

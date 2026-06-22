@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCart } from '../lib/CartContext'
+import { trackCarrito } from '../lib/tracking'
 
 export default function ProductCard({ product }) {
   const { add } = useCart()
@@ -54,7 +55,7 @@ export default function ProductCard({ product }) {
             : <p style={{ fontSize:12, color:'#999', fontFamily:'Satoshi, sans-serif' }}>Consultar precio</p>
           }
           <button
-            onClick={e => { e.stopPropagation(); add(product); }}
+            onClick={e => { e.stopPropagation(); add(product); trackCarrito(product.id) }}
             style={{
               background: added ? '#16A34A' : '#0F0F0F',
               color:'white', border:'none', borderRadius:4,
